@@ -27,7 +27,7 @@ fi
 
 image=mlperf-infer-imgclassify-$device
 docker build  -t $image -f Dockerfile.$device .
-opts="--mlperf_conf ./mlperf.conf --profile $profile $common_opt --model $model_path \
+opts="--profile $profile $common_opt --model $model_path \
     --dataset-path $DATA_DIR --output $OUTPUT_DIR $extra_args $EXTRA_OPS $@"
 
 docker run $gpus -e opts="$opts" \
