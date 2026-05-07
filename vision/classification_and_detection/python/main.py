@@ -639,14 +639,32 @@ def main():
     )
     # load model to backend
     if args.device == "tpu":
-        model = backend.load(
-            args.model, inputs=args.inputs, outputs=args.outputs, use_tpu=True
-        )
+        if args.backend == "tflite":
+            model = backend.load(
+                args.model,
+                inputs=args.inputs,
+                outputs=args.outputs,
+                use_tpu=True,
+                max_batchsize=args.max_batchsize,
+            )
+        else:
+            model = backend.load(
+                args.model, inputs=args.inputs, outputs=args.outputs, use_tpu=True
+            )
     else:
-        model = backend.load(
-            args.model,
-            inputs=args.inputs,
-            outputs=args.outputs)
+        if args.backend == "tflite":
+            model = backend.load(
+                args.model,
+                inputs=args.inputs,
+                outputs=args.outputs,
+                max_batchsize=args.max_batchsize,
+            )
+        else:
+            model = backend.load(
+                args.model,
+                inputs=args.inputs,
+                outputs=args.outputs,
+            )
     final_results = {
         "runtime": model.name(),
         "version": model.version(),
@@ -673,11 +691,20 @@ def main():
     count = ds.get_item_count()
 
     # warmup
-    ds.load_query_samples([0])
+    warmup_bs = getattr(model, "fixed_batch_size", 1)
+    warmup_load_ids = list(range(min(count, warmup_bs)))
+    if not warmup_load_ids:
+        warmup_load_ids = [0]
+    ds.load_query_samples(warmup_load_ids)
+    log.info("warmup 5 times")
     for _ in range(5):
-        img, _ = ds.get_samples([0])
+        warmup_ids = list(warmup_load_ids)
+        if len(warmup_ids) < warmup_bs:
+            warmup_ids += [warmup_ids[0]] * (warmup_bs - len(warmup_ids))
+        img, _ = ds.get_samples(warmup_ids)
         _ = backend.predict({backend.inputs[0]: img})
     ds.unload_query_samples(None)
+    log.info("warmup done")
 
     scenario = SCENARIO_MAP[args.scenario]
     runner_map = {
