@@ -48,6 +48,7 @@ RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/c
 RUN pip install cmake
 RUN pip install future pillow onnx opencv-python-headless tensorflow onnxruntime
 RUN pip install Cython && pip install pycocotools
+RUN pip install protobuf==3.20.0
 
 RUN cd /tmp && \
     git clone --recursive https://github.com/mlcommons/inference && \

@@ -36,6 +36,7 @@ RUN pip install --upgrade pip
 RUN pip install cmake
 RUN pip install future pillow onnx opencv-python-headless tensorflow onnxruntime
 RUN pip install Cython && pip install pycocotools
+RUN pip install protobuf==3.20.0
 RUN cd /tmp && \
     git clone --recursive https://github.com/mlcommons/inference && \
     cd inference/loadgen && \
