@@ -1,0 +1,59 @@
+FROM ubuntu:20.04
+
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHON_VERSION=3.8
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PATH=/opt/anaconda3/bin:$PATH
+
+WORKDIR /root
+ENV HOME=/root
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      git \
+      build-essential \
+      software-properties-common \
+      ca-certificates \
+      wget \
+      curl \
+      pkg-config \
+      libhdf5-dev \
+      htop \
+      zip \
+      unzip && \
+    rm -rf /var/lib/apt/lists/*
+
+# Map docker arch to Miniforge naming.
+RUN case "${TARGETARCH}" in \
+      amd64) MINIFORGE_ARCH="x86_64" ;; \
+      arm64) MINIFORGE_ARCH="aarch64" ;; \
+      *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    cd /opt && \
+    wget --quiet "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${MINIFORGE_ARCH}.sh" -O miniconda.sh && \
+    /bin/bash ./miniconda.sh -b -p /opt/anaconda3 && \
+    rm miniconda.sh && \
+    /opt/anaconda3/bin/conda clean -a -y && \
+    ln -s /opt/anaconda3/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
+    echo ". /opt/anaconda3/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo "conda activate base" >> ~/.bashrc && \
+    /opt/anaconda3/bin/conda config --set always_yes yes --set changeps1 no && \
+    /opt/anaconda3/bin/conda config --add channels conda-forge
+
+RUN /opt/anaconda3/bin/conda install python=${PYTHON_VERSION} pip h5py
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+RUN pip install cmake
+RUN pip install future pillow onnx opencv-python-headless tensorflow onnxruntime
+RUN pip install Cython && pip install pycocotools
+
+RUN cd /tmp && \
+    git clone --recursive https://github.com/mlcommons/inference && \
+    cd inference/loadgen && \
+    pip install pybind11 && \
+    CFLAGS="-std=c++14" python setup.py install && \
+    rm -rf mlperf
+
+ENTRYPOINT ["/bin/bash"]
