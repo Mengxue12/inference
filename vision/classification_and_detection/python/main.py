@@ -306,6 +306,12 @@ def get_args():
         default=os.cpu_count(),
         type=int,
         help="threads")
+    parser.add_argument(
+        "--inference_threads",
+        type=int,
+        default=None,
+        help="tflite interpreter inference threads (num_threads)",
+    )
     parser.add_argument("--qps", type=int, help="target qps")
     parser.add_argument("--cache", type=int, default=0, help="use cache")
     parser.add_argument(
@@ -392,6 +398,8 @@ def get_args():
         parser.error("valid scanarios:" + str(list(SCENARIO_MAP.keys())))
     if args.resolution is not None and args.resolution <= 0:
         parser.error("--resolution must be a positive integer")
+    if args.inference_threads is not None and args.inference_threads <= 0:
+        parser.error("--inference_threads must be a positive integer")
     if args.scenario == "SingleStream":
         args.max_batchsize = 1
     return args
@@ -670,6 +678,7 @@ def main():
                 use_tpu=True,
                 max_batchsize=args.max_batchsize,
                 image_size=kwargs.get("image_size"),
+                inference_threads=args.inference_threads,
             )
         else:
             model = backend.load(
@@ -683,6 +692,7 @@ def main():
                 outputs=args.outputs,
                 max_batchsize=args.max_batchsize,
                 image_size=kwargs.get("image_size"),
+                inference_threads=args.inference_threads,
             )
         else:
             model = backend.load(

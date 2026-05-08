@@ -50,6 +50,7 @@ class BackendTflite(backend.Backend):
         use_tpu=False,
         max_batchsize=1,
         image_size=None,
+        inference_threads=None,
     ):
         self.use_tpu = use_tpu
         self.fixed_batch_size = max(1, int(max_batchsize))
@@ -58,7 +59,12 @@ class BackendTflite(backend.Backend):
 
             self.sess = make_interpreter(model_path)
         else:
-            self.sess = tflite.Interpreter(model_path=model_path)
+            if inference_threads is None:
+                self.sess = tflite.Interpreter(model_path=model_path)
+            else:
+                self.sess = tflite.Interpreter(
+                    model_path=model_path, num_threads=int(inference_threads)
+                )
 
         # NHWC targets derived from dataset side. Any of these may be None,
         # meaning "fall back to the model's static shape".
