@@ -125,8 +125,8 @@ class Imagenet(dataset.Dataset):
             log.info("reduced image list, %d images not found", self.not_found)
 
         log.info(
-            "loaded {} images, cache={}, already_preprocessed={}, took={:.1f}sec".format(
-                len(self.image_list), use_cache, pre_process is None, time_taken
+            "loaded {} images, cache={}, pre_process={}, took={:.1f}sec".format(
+                len(self.image_list), self.use_cache, pre_process.__name__ if pre_process else 'None (using preprocessed data)', time_taken
             )
         )
         self.label_list = np.array(self.label_list)
@@ -151,8 +151,8 @@ class Imagenet(dataset.Dataset):
                     exist_ok=True,
                 )
                 dst = os.path.join(self.cache_dir, image_name)
-                if not os.path.exists(dst + ".npy"):
-                    # cache a preprocessed version of the image
+                rebuild = (self.use_cache == 0) or (not os.path.exists(dst + ".npy"))
+                if rebuild:
                     img_org = cv2.imread(src)
                     processed = self.pre_process(
                         img_org,
