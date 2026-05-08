@@ -690,6 +690,27 @@ def main():
                 inputs=args.inputs,
                 outputs=args.outputs,
             )
+
+    if args.backend == "tflite":
+        output_details = getattr(getattr(model, "sess", None), "get_output_details", None)
+        if callable(output_details):
+            try:
+                tflite_outputs = output_details()
+                if tflite_outputs:
+                    first_output = tflite_outputs[0]
+                    shape_signature = first_output.get("shape_signature")
+                    if (
+                        shape_signature is not None
+                        and len(shape_signature) > 1
+                        and int(shape_signature[1]) == 1000
+                        and isinstance(post_proc, dataset.PostProcessArgMax)
+                    ):
+                        post_proc = dataset.PostProcessArgMax(offset=0)
+                        log.info(
+                            "tflite output shape_signature[1] is 1000, overriding PostProcessArgMax offset to 0"
+                        )
+            except Exception as ex:  # pylint: disable=broad-except
+                log.warning("failed to inspect tflite output shape_signature: %s", ex)
     final_results = {
         "runtime": model.name(),
         "version": model.version(),
