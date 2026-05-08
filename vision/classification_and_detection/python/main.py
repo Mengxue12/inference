@@ -363,6 +363,13 @@ def get_args():
         type=int,
         help="mlperf multi-stream samples per query",
     )
+    parser.add_argument(
+        "--resolution",
+        type=int,
+        default=None,
+        metavar="N",
+        help="override dataset preprocessing H and W (square); channels stay as in the dataset profile",
+    )
     args = parser.parse_args()
 
     # don't use defaults in argparser. Instead we default to a dict, override that with a profile
@@ -383,6 +390,10 @@ def get_args():
 
     if args.scenario not in SCENARIO_MAP:
         parser.error("valid scanarios:" + str(list(SCENARIO_MAP.keys())))
+    if args.resolution is not None and args.resolution <= 0:
+        parser.error("--resolution must be a positive integer")
+    if args.scenario == "SingleStream":
+        args.max_batchsize = 1
     return args
 
 
@@ -622,6 +633,16 @@ def main():
 
     # dataset to use
     wanted_dataset, pre_proc, post_proc, kwargs = SUPPORTED_DATASETS[args.dataset]
+    kwargs = dict(kwargs)
+    if args.resolution is not None:
+        prev = kwargs.get("image_size", [224, 224, 3])
+        channels = prev[2] if len(prev) > 2 else 3
+        kwargs["image_size"] = [args.resolution, args.resolution, channels]
+        log.info(
+            "overriding image_size to %s (--resolution %d)",
+            kwargs["image_size"],
+            args.resolution,
+        )
     if args.use_preprocessed_dataset:
         pre_proc = None
     ds = wanted_dataset(
@@ -646,6 +667,7 @@ def main():
                 outputs=args.outputs,
                 use_tpu=True,
                 max_batchsize=args.max_batchsize,
+                image_size=kwargs.get("image_size"),
             )
         else:
             model = backend.load(
@@ -658,6 +680,7 @@ def main():
                 inputs=args.inputs,
                 outputs=args.outputs,
                 max_batchsize=args.max_batchsize,
+                image_size=kwargs.get("image_size"),
             )
         else:
             model = backend.load(

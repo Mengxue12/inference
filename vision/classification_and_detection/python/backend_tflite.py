@@ -42,7 +42,15 @@ class BackendTflite(backend.Backend):
         # tflite is always NHWC
         return "NHWC"
 
-    def load(self, model_path, inputs=None, outputs=None, use_tpu=False, max_batchsize=1):
+    def load(
+        self,
+        model_path,
+        inputs=None,
+        outputs=None,
+        use_tpu=False,
+        max_batchsize=1,
+        image_size=None,
+    ):
         self.use_tpu = use_tpu
         self.fixed_batch_size = max(1, int(max_batchsize))
         if use_tpu:
@@ -52,16 +60,64 @@ class BackendTflite(backend.Backend):
         else:
             self.sess = tflite.Interpreter(model_path=model_path)
 
+        # NHWC targets derived from dataset side. Any of these may be None,
+        # meaning "fall back to the model's static shape".
+        target_h = target_w = target_c = None
+        if image_size is not None:
+            if len(image_size) < 2:
+                raise ValueError(
+                    "image_size must be [H, W] or [H, W, C], got {}".format(image_size)
+                )
+            target_h = int(image_size[0])
+            target_w = int(image_size[1])
+            if len(image_size) > 2:
+                target_c = int(image_size[2])
+
+        print(f"output details: {self.sess.get_output_details()}")
+
         for input_detail in self.sess.get_input_details():
-            shape_signature = input_detail["shape_signature"]
+            input_shape = [int(x) for x in input_detail["shape"]]
+            raw_sig = input_detail.get("shape_signature")
+            if raw_sig is None:
+                shape_signature = list(input_shape)
+            else:
+                shape_signature = list(raw_sig)
+
             print(f"input_detail: {input_detail}")
-            input_shape = list(input_detail["shape"])
-            if shape_signature[0] is None or shape_signature[0] == -1: # scenario 1: signature provides dynamic batch size
-                input_shape[0] = self.fixed_batch_size
-            elif shape_signature[0] != self.fixed_batch_size: # scenario 2: signature provides fixed batch size
-                raise ValueError(f"Batch size {self.fixed_batch_size} does not match input shape signature {shape_signature}.")
-           
-            print(f"resizing tensor {input_detail['name']} to {input_shape}")
+
+            # batch (NHWC dim 0)
+            if len(shape_signature) > 0 and len(input_shape) > 0:
+                sig0 = shape_signature[0]
+                if sig0 is None or int(sig0) == -1:
+                    input_shape[0] = self.fixed_batch_size
+                elif int(sig0) != self.fixed_batch_size:
+                    raise ValueError(
+                        "Batch size {} does not match input shape signature {}.".format(
+                            self.fixed_batch_size, shape_signature
+                        )
+                    )
+
+            # spatial H, W and channel C (NHWC dims 1, 2, 3)
+            if len(input_shape) >= 4 and len(shape_signature) >= 4:
+                dim_targets = {1: ("H", target_h), 2: ("W", target_w), 3: ("C", target_c)}
+                for idx, (dim_name, want) in dim_targets.items():
+                    sig_i = shape_signature[idx]
+                    if sig_i is None or int(sig_i) == -1:
+                        if want is not None:
+                            input_shape[idx] = want
+                        elif input_shape[idx] <= 0:
+                            input_shape[idx] = 224 if idx in (1, 2) else 3
+                    else:
+                        fixed = int(sig_i)
+                        if want is not None and fixed != want:
+                            raise ValueError(
+                                "Input {}: {} is fixed to {} but image_size requests {}.".format(
+                                    input_detail.get("name", "?"), dim_name, fixed, want
+                                )
+                            )
+                        input_shape[idx] = fixed
+
+            print("resizing tensor {} to {}".format(input_detail["name"], input_shape))
             self.sess.resize_tensor_input(input_detail["index"], input_shape)
         self.sess.allocate_tensors()
         # keep input/output name to index mapping
