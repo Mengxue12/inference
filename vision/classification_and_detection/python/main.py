@@ -645,6 +645,8 @@ def main():
         )
     if args.use_preprocessed_dataset:
         pre_proc = None
+    if args.backend == "tflite":
+        pre_proc = dataset.pre_process_tflite
     ds = wanted_dataset(
         data_path=args.dataset_path,
         image_list=args.dataset_list,
