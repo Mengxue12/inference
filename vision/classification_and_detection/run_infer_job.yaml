@@ -1,0 +1,74 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlperf-infer-job
+spec:
+  template:
+    spec:
+      nodeName: k8s-master01
+      containers:
+      - name: mlperf-infer
+        image: mengxue12/mlperf-infer-imgclassify-cpu:v5.1-amd-2
+        # Redirect stdout and stderr to /output/infer.log
+        env:
+        - name: MODEL_DIR
+          value: /mnt/inference/models/
+        - name: DATA_DIR
+          value: /mnt/inference/imagenet/val_1000/
+        - name: PLATFORM
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NUM_RUN
+          value: "1"
+        - name: RESOLUTION
+          value: "224"
+        - name: QUANTIZATION_TYPE
+          value: "tflite,fp16"
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          /mlperf/run_in_container_mounted.sh \
+            --backend tflite \
+            --model_name mobilenetv2 \
+            --device cpu \
+            --scenario SingleStream \
+            --resolution $RESOLUTION \
+            --inference_threads 1 \
+            --max-batchsize $MAX_BATCHSIZE \
+            --use_preprocessed_dataset false \
+            --cache 0 \
+            --num_run $NUM_RUN \
+            --preprocessed_dir /mnt/inference/imagenet/val_1000/224/ \
+            --use_preprocessed_dataset false \
+            --output-dir /output \
+            --time 10
+   
+        volumeMounts:
+        - name: data-dir
+          mountPath: /mnt/inference/imagenet/val_1000/
+        - name: model-dir
+          mountPath: /mnt/inference/models/
+        - name: mlperf-dir
+          mountPath: /mlperf
+        - name: output-dir
+          mountPath: /output
+        - name: host-proc
+          mountPath: /host_proc
+      restartPolicy: Never
+      volumes:
+      - name: data-dir
+        hostPath:
+          path: /mnt/inference/imagenet/val_1000/
+      - name: model-dir
+        hostPath:
+          path: /mnt/inference/models/
+      - name: mlperf-dir
+        hostPath:
+          path: /home/mengxue/Projects/mlcommons/inference/vision/classification_and_detection
+      - name: output-dir
+        hostPath:
+          path: /home/mengxue/Projects/mlcommons/inference/vision/classification_and_detection/output/k3s/tflite-cpu/mobilenet
+      - name: host-proc
+        hostPath:
+          path: /proc
