@@ -1,48 +1,68 @@
-FROM ubuntu:16.04
+# syntax=docker/dockerfile:1
+# TFLite inference image — small runtime using official Python slim (no Conda).
+# Multi-stage: compile mlperf loadgen in builder; final image has no compiler/git.
+#
+# Size: full Anaconda >> Miniconda > python:slim + wheels. Use slim when you want a smaller image.
 
-ENV PYTHON_VERSION=3.7
-ENV LANG C.UTF-8
-ENV LC_ALL C.UTF-8
-ENV PATH /opt/anaconda3/bin:$PATH
 ARG MLCOMMONS_INFERENCE_REF=v5.1
 
+# -----------------------------------------------------------------------------
+FROM python:3.10-slim-bookworm AS builder
+ARG MLCOMMONS_INFERENCE_REF
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
+    && pip install --no-cache-dir \
+    cmake==3.27.9 \
+    pybind11==2.10.4 \
+    Cython==0.29.37
+
+# Sparse checkout: only loadgen (avoids huge language/vision submodules from --recursive).
+RUN git clone --branch "${MLCOMMONS_INFERENCE_REF}" --depth 1 --filter=blob:none --sparse \
+    https://github.com/mlcommons/inference /tmp/inference \
+    && cd /tmp/inference \
+    && git sparse-checkout set loadgen \
+    && cd loadgen \
+    && CFLAGS="-std=c++14" python setup.py install \
+    && rm -rf /tmp/inference
+
+# -----------------------------------------------------------------------------
+FROM python:3.10-slim-bookworm
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
 WORKDIR /root
-ENV HOME /root
+ENV HOME=/root
 
-RUN apt-get update
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get install -y --no-install-recommends \
-      git \
-      build-essential \
-      software-properties-common \
-      ca-certificates \
-      wget \
-      curl \
-      htop \
-      zip \
-      unzip
+# setup.py install drops a versioned .egg dir; flatten into site-packages for imports.
+RUN --mount=from=builder,source=/usr/local/lib/python3.10/site-packages,target=/b,readonly \
+    set -eux; \
+    egg=$(ls -d /b/mlcommons_loadgen-*.egg); \
+    cp -r "$egg/mlcommons_loadgen" /usr/local/lib/python3.10/site-packages/; \
+    cp "$egg"/mlperf_loadgen*.so /usr/local/lib/python3.10/site-packages/
 
-RUN cd /opt && \
-    wget --quiet https://repo.anaconda.com/miniconda/Miniconda3-4.6.14-Linux-x86_64.sh -O miniconda.sh && \
-    /bin/bash ./miniconda.sh -b -p /opt/anaconda3 && \
-    rm miniconda.sh && \
-    /opt/anaconda3/bin/conda clean -tipsy && \
-    ln -s /opt/anaconda3/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    echo ". /opt/anaconda3/etc/profile.d/conda.sh" >> ~/.bashrc && \
-    echo "conda activate base" >> ~/.bashrc && \
-    conda config --set always_yes yes --set changeps1 no
-
-RUN pip install --upgrade pip==23.3.2
-RUN pip install cmake==3.27.9
-RUN pip install future==1.0.0 numpy==1.21.6 pillow==9.5.0 opencv-python-headless==4.8.1.78
-RUN pip install tflite-runtime==2.14.0
-RUN pip install Cython==0.29.37
-RUN pip install protobuf==3.20.0
-RUN cd /tmp && \
-    git clone --recursive --branch "${MLCOMMONS_INFERENCE_REF}" --depth 1 https://github.com/mlcommons/inference && \
-    cd inference/loadgen && \
-    pip install pybind11==2.10.4 && \
-    CFLAGS="-std=c++14" python setup.py install && \
-    rm -rf mlperf
+RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
+    && pip install --no-cache-dir \
+    numpy==1.26.4 \
+    pillow==10.3.0 \
+    opencv-python-headless==4.8.1.78 \
+    tflite-runtime==2.14.0 \
+    protobuf==3.20.3
 
 ENTRYPOINT ["/bin/bash"]
