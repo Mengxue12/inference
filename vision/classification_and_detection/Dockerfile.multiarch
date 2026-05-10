@@ -1,6 +1,8 @@
 FROM ubuntu:20.04
 
 ARG TARGETARCH
+ARG MINIFORGE_VERSION=24.11.3-2
+ARG MLCOMMONS_INFERENCE_REF=v5.1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHON_VERSION=3.8
 ENV LANG=C.UTF-8
@@ -10,19 +12,13 @@ ENV PATH=/opt/anaconda3/bin:$PATH
 WORKDIR /root
 ENV HOME=/root
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      git \
-      build-essential \
-      software-properties-common \
-      ca-certificates \
-      wget \
-      curl \
-      pkg-config \
-      libhdf5-dev \
-      htop \
-      zip \
-      unzip && \
+RUN set -eux; \
+    apt_packages="git build-essential software-properties-common ca-certificates wget curl htop zip unzip"; \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+      apt_packages="${apt_packages} pkg-config libhdf5-dev"; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends ${apt_packages}; \
     rm -rf /var/lib/apt/lists/*
 
 # Map docker arch to Miniforge naming.
@@ -32,7 +28,7 @@ RUN case "${TARGETARCH}" in \
       *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
     cd /opt && \
-    wget --quiet "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-${MINIFORGE_ARCH}.sh" -O miniconda.sh && \
+    wget --quiet "https://github.com/conda-forge/miniforge/releases/download/${MINIFORGE_VERSION}/Miniforge3-${MINIFORGE_VERSION}-Linux-${MINIFORGE_ARCH}.sh" -O miniconda.sh && \
     /bin/bash ./miniconda.sh -b -p /opt/anaconda3 && \
     rm miniconda.sh && \
     /opt/anaconda3/bin/conda clean -a -y && \
@@ -42,18 +38,24 @@ RUN case "${TARGETARCH}" in \
     /opt/anaconda3/bin/conda config --set always_yes yes --set changeps1 no && \
     /opt/anaconda3/bin/conda config --add channels conda-forge
 
-RUN /opt/anaconda3/bin/conda install python=${PYTHON_VERSION} pip h5py
-RUN pip install --upgrade pip setuptools wheel
-RUN pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-RUN pip install cmake
-RUN pip install future pillow onnx opencv-python-headless tensorflow onnxruntime
-RUN pip install Cython && pip install pycocotools
-RUN pip install protobuf==3.20.0
+RUN set -eux; \
+    if [ "${TARGETARCH}" = "arm64" ]; then \
+      /opt/anaconda3/bin/conda install python=${PYTHON_VERSION} pip=24.2 h5py=3.11.0; \
+    else \
+      /opt/anaconda3/bin/conda install python=${PYTHON_VERSION} pip=24.2; \
+    fi; \
+    /opt/anaconda3/bin/conda clean -a -y
+RUN pip install --no-cache-dir --upgrade pip==24.2 setuptools==75.3.0 wheel==0.44.0
+RUN pip install --no-cache-dir torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir cmake==3.30.5
+RUN pip install --no-cache-dir future==1.0.0 pillow==10.4.0 onnx==1.16.2 opencv-python-headless==4.10.0.84 tensorflow==2.13.1 onnxruntime==1.19.2
+RUN pip install --no-cache-dir Cython==3.0.11 && pip install --no-cache-dir pycocotools==2.0.8
+RUN pip install --no-cache-dir protobuf==3.20.0
 
 RUN cd /tmp && \
-    git clone --recursive https://github.com/mlcommons/inference && \
+    git clone --recursive --branch "${MLCOMMONS_INFERENCE_REF}" --depth 1 https://github.com/mlcommons/inference && \
     cd inference/loadgen && \
-    pip install pybind11 && \
+    pip install --no-cache-dir pybind11==2.13.6 && \
     CFLAGS="-std=c++14" python setup.py install && \
     rm -rf mlperf
 
