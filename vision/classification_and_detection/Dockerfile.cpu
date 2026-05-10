@@ -4,6 +4,9 @@ ENV PYTHON_VERSION=3.7
 ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
 ENV PATH /opt/anaconda3/bin:$PATH
+# Large wheels (e.g. tensorflow ~500MB) often need longer than pip's default timeout on slow links
+ENV PIP_DEFAULT_TIMEOUT=300
+ARG MLCOMMONS_INFERENCE_REF=v5.1
 
 WORKDIR /root
 ENV HOME /root
@@ -31,16 +34,20 @@ RUN cd /opt && \
     echo "conda activate base" >> ~/.bashrc && \
     conda config --set always_yes yes --set changeps1 no
 
-RUN conda install pytorch-cpu torchvision-cpu -c pytorch
-RUN pip install --upgrade pip
-RUN pip install cmake
-RUN pip install future pillow onnx opencv-python-headless tensorflow onnxruntime
-RUN pip install Cython && pip install pycocotools
-RUN pip install protobuf==3.20.0
+# PyTorch CPU via pip wheels is more reliable here than conda -c pytorch on Xenial
+RUN pip install --upgrade pip==23.3.2
+RUN pip install torch==1.13.1+cpu torchvision==0.14.1+cpu --extra-index-url https://download.pytorch.org/whl/cpu
+RUN pip install cmake==3.27.9
+# onnx>=1.13 needs protobuf>=3.20.2; tensorflow 2.10.1 needs protobuf<3.20 — onnx 1.12.0 allows protobuf<=3.20.1
+# onnxruntime>=1.15 needs Python>=3.8 → last cp37 wheel is 1.14.1
+RUN pip install --retries 10 future==1.0.0 pillow==9.5.0 onnx==1.12.0 opencv-python-headless==4.8.1.78 tensorflow==2.10.1 "protobuf>=3.12.2,<3.20"
+RUN pip install onnxruntime==1.14.1
+RUN pip install Cython==0.29.37 && pip install pycocotools==2.0.7
+RUN pip install protobuf==3.19.6
 RUN cd /tmp && \
-    git clone --recursive https://github.com/mlcommons/inference && \
+    git clone --recursive --branch "${MLCOMMONS_INFERENCE_REF}" --depth 1 https://github.com/mlcommons/inference && \
     cd inference/loadgen && \
-    pip install pybind11 && \
+    pip install pybind11==2.10.4 && \
     CFLAGS="-std=c++14" python setup.py install && \
     rm -rf mlperf
 
