@@ -311,7 +311,7 @@ def pre_process_openimages_retinanet(img, dims=None, need_transpose=False):
     return img
 
 
-def pre_process_tflite(img, dims=None, need_transpose=False):
+def pre_process_imagenet_tflite(img, dims=None, need_transpose=False):
     if len(img.shape) < 3 or img.shape[2] != 3:
         # some images might be grayscale
         img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)

@@ -47,6 +47,12 @@ SUPPORTED_DATASETS = {
         dataset.PostProcessArgMax(offset=-1),
         {"image_size": [224, 224, 3]},
     ),
+    "imagenet_tflite": (
+        imagenet.Imagenet,
+        dataset.pre_process_imagenet_tflite,
+        dataset.PostProcessArgMax(offset=0),
+        {"image_size": [224, 224, 3]},
+    ),
     "imagenet_tflite_tpu": (
         imagenet.Imagenet,
         dataset.pre_process_imagenet_tflite_tpu,
@@ -166,6 +172,12 @@ SUPPORTED_PROFILES = {
         "model-name": "resnet50",
     },
     # mobilenet
+    "mobilenetv2-tflite": {
+        "dataset": "imagenet_tflite",
+        "outputs": "ArgMax:0",
+        "backend": "tflite",
+        "model-name": "mobilenetv2",
+    },
     "mobilenet-tf": {
         "inputs": "input:0",
         "outputs": "MobilenetV1/Predictions/Reshape_1:0",
@@ -654,7 +666,7 @@ def main():
     if args.use_preprocessed_dataset:
         pre_proc = None
     if args.backend == "tflite":
-        pre_proc = dataset.pre_process_tflite
+        pre_proc = dataset.pre_process_imagenet_tflite
     ds = wanted_dataset(
         data_path=args.dataset_path,
         image_list=args.dataset_list,
