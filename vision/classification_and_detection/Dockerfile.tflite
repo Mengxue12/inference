@@ -62,7 +62,7 @@ RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
     numpy==1.26.4 \
     pillow==10.3.0 \
     opencv-python-headless==4.8.1.78 \
-    tflite-runtime==2.14.0 \
+    ai_edge_litert==2.1.3 \
     protobuf==3.20.3
 
 ENTRYPOINT ["/bin/bash"]

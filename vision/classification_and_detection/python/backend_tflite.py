@@ -8,13 +8,14 @@ from threading import Lock
 
 try:
     # try dedicated tflite package first
-    import tflite_runtime
-    import tflite_runtime.interpreter as tflite
+    import ai_edge_litert
+    from ai_edge_litert import interpreter as tflite
 
-    _version = tflite_runtime.__version__
-    _git_version = tflite_runtime.__git_version__
+    _version = ai_edge_litert.__version__
+    _git_version = ai_edge_litert.__version__
 except BaseException:
     # fall back to tflite bundled in tensorflow
+    print("Falling back to tensorflow tflite")
     import tensorflow as tf
     from tensorflow.lite.python import interpreter as tflite
 
