@@ -350,7 +350,7 @@ def get_args():
     if args.inference_threads is not None and args.inference_threads <= 0:
         parser.error("--inference_threads must be a positive integer")
     if args.scenario == "SingleStream":
-        args.max_batchsize = 1
+        args.max_batchsize = 1 # in case padding for tflite
     return args
 
 
@@ -600,10 +600,10 @@ def main():
             kwargs["image_size"],
             args.resolution,
         )
-    if args.use_preprocessed_dataset:
-        pre_proc = None
     if args.backend == "tflite":
         pre_proc = dataset.pre_process_imagenet_tflite
+    if args.use_preprocessed_dataset:
+        pre_proc = None
     ds = wanted_dataset(
         data_path=args.dataset_path,
         image_list=args.dataset_list,
