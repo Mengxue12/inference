@@ -8,50 +8,59 @@ spec:
       nodeName: k8s-master01
       containers:
       - name: mlperf-infer
-        image: mengxue12/mlperf-infer-imgclassify-cpu:v5.1-amd-2
+        image: mengxue12/mlperf-infer-imgclassify-cpu:v5.1-litert-multiarch
         # Redirect stdout and stderr to /output/infer.log
         env:
         - name: MODEL_DIR
-          value: /mnt/inference/models/
+          value: /data/models/
         - name: DATA_DIR
-          value: /mnt/inference/imagenet/val_1000/
+          value: /data/imagenet/val_1000/
+        - name: SCENARIO
+          value: "SingleStream"
+        - name: NUM_RUN
+          value: "1"
+          # adaptation parameters
+        - name: MODEL_BASE
+          value: "mobilenetv2" # "mobilenetv2,resnetv1"
+        - name: QUANTIZATION_TYPE
+          value: "tflite"
+        - name: RESOLUTION
+          value: "224"
+        - name: INFERENCE_THREADS
+          value: "1"
         - name: PLATFORM
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        - name: NUM_RUN
-          value: "1"
-        - name: RESOLUTION
-          value: "224"
-        - name: QUANTIZATION_TYPE
-          value: "tflite,fp16"
+        - name: BATCHSIZE
+          value: "1" # will be used in other scenarios
+        
         command: ["/bin/sh", "-c"]
         args:
         - |
           /mlperf/run_in_container_mounted.sh \
             --backend tflite \
-            --model_name mobilenetv2 \
+            --model_base $MODEL_BASE \
             --device cpu \
-            --scenario SingleStream \
+            --scenario $SCENARIO \
             --resolution $RESOLUTION \
-            --inference_threads 1 \
-            --max-batchsize $MAX_BATCHSIZE \
-            --use_preprocessed_dataset false \
-            --cache 0 \
+            --inference_threads $INFERENCE_THREADS \
+            --max-batchsize $BATCHSIZE \
+            --cache 1 \
             --num_run $NUM_RUN \
-            --preprocessed_dir /mnt/inference/imagenet/val_1000/224/ \
-            --use_preprocessed_dataset false \
-            --output-dir /output \
+            --output-base-dir /output \
             --time 10
    
         volumeMounts:
         - name: data-dir
-          mountPath: /mnt/inference/imagenet/val_1000/
+          mountPath: /data/imagenet/
+          readOnly: false
         - name: model-dir
-          mountPath: /mnt/inference/models/
+          mountPath: /data/models/
+          readOnly: true
         - name: mlperf-dir
           mountPath: /mlperf
-        - name: output-dir
+        - name: inference-results
           mountPath: /output
         - name: host-proc
           mountPath: /host_proc
@@ -59,16 +68,18 @@ spec:
       volumes:
       - name: data-dir
         hostPath:
-          path: /mnt/inference/imagenet/val_1000/
+          path: /mnt/inference/imagenet/
+          type: Directory
       - name: model-dir
         hostPath:
           path: /mnt/inference/models/
+          type: Directory
       - name: mlperf-dir
         hostPath:
           path: /home/mengxue/Projects/mlcommons/inference/vision/classification_and_detection
-      - name: output-dir
-        hostPath:
-          path: /home/mengxue/Projects/mlcommons/inference/vision/classification_and_detection/output/k3s/tflite-cpu/mobilenet
+      - name: inference-results
+        persistentVolumeClaim:
+          claimName: inference-results-pvc
       - name: host-proc
         hostPath:
           path: /proc
