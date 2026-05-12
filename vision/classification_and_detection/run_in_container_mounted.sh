@@ -5,16 +5,19 @@ set -euo pipefail
 usage() {
     cat <<EOF
 Usage:
-  $0 --backend <backend> --model_name <model_name_csv> --device <device> \\
-     --scenario <scenario> --max-batchsize <n> \\
-     --inference_thread <threads_csv> --preprocessed_dir <dir> --cache <0|1> \\
+  $0 --backend <backend> --model_base <model_base_csv> --device <device> \\
+     --scenario <scenario> \\
+     --inference_threads <threads_csv> --max-batchsize <batchsize> \\
+     --cache <0|1> \\
+     --preprocessed_dir <dir> \\
      [--output-dir <dir>] [extra args ...]
 
 Example:
   QUANTIZATION_TYPE="int8,fp16" RESOLUTION="224,192" PLATFORM=cpu NUM_RUN=1 \\
-  $0 --backend tflite --model_name "mobilenetv2,resnet50v2" --device cpu \\
-     --scenario SingleStream --max-batchsize 1 \\
-     --inference_thread "2,4" --preprocessed_dir /data/preprocessed --cache 1
+  $0 --backend tflite --model_base "mobilenetv2,resnet50v2" --device cpu \\
+     --scenario SingleStream \\
+     --inference_threads "2,4" \\
+     --max-batchsize 1  --cache 1--preprocessed_dir /data/preprocessed
 
 Environment variables:
   QUANTIZATION_TYPE   quantization type CSV string (required unless --quantization_type is given)
@@ -25,18 +28,18 @@ EOF
 }
 
 backend=""
-model_name=""
+model_base="${MODEL_BASE:-}"
 device=""
-scenario=""
-max_batchsize=""
-inference_thread=""
+scenario="${SCENARIO:-SingleStream}"
 preprocessed_dir=""
 cache=""
 cache_dir=""
 use_preprocessed_dataset=""
 custom_output_dir=""
 quantization_type="${QUANTIZATION_TYPE:-}"
-resolution_env="${RESOLUTION:-}"
+resolution="${RESOLUTION:-}"
+inference_threads="${INFERENCE_THREADS:-}"
+max_batchsize="${BATCHSIZE:-}"
 platform="${PLATFORM:-}"
 num_run="${NUM_RUN:-1}"
 extra_cli_args=()
@@ -47,8 +50,8 @@ while [ $# -gt 0 ]; do
             backend="${2:-}"
             shift 2
             ;;
-        --model_name)
-            model_name="${2:-}"
+        --model_base)
+            model_base="${2:-}"
             shift 2
             ;;
         --device)
@@ -67,8 +70,8 @@ while [ $# -gt 0 ]; do
             max_batchsize="${2:-}"
             shift 2
             ;;
-        --inference_thread)
-            inference_thread="${2:-}"
+        --inference_threads)
+            inference_threads="${2:-}"
             shift 2
             ;;
         --cache)
@@ -103,6 +106,10 @@ while [ $# -gt 0 ]; do
             custom_output_dir="${2:-}"
             shift 2
             ;;
+        --output-base-dir)
+            output_base_dir="${2:-}"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -114,14 +121,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ -z "$backend" ] || [ -z "$model_name" ] || [ -z "$device" ] || \
-   [ -z "$scenario" ] || [ -z "$max_batchsize" ] || \
-   [ -z "$inference_thread" ] || [ -z "$cache" ] || \
+# check if the required arguments are set
+if [ -z "$backend" ] || [ -z "$model_base" ] || [ -z "$device" ] || \
    [ -z "$quantization_type" ]; then
     usage
     exit 1
 fi
 
+# check if the data and model directories are set
 if [ "x${DATA_DIR:-}" = "x" ]; then
     echo "DATA_DIR not set"
     exit 1
@@ -157,14 +164,11 @@ if [ -z "$platform" ]; then
 fi
 
 if [ -z "$cache_dir" ]; then
-    cache_dir="$DATA_DIR/preprocessed"
+    cache_dir="$DATA_DIR"
 fi
 
-if [ -z "$use_preprocessed_dataset" ]; then
-    use_preprocessed_dataset="1"
-fi
 
-if [ -z "$resolution_env" ]; then
+if [ -z "$resolution" ]; then
     resolution_values=""
 else
     resolution_values="$(split_csv_to_lines "$resolution_env")"
@@ -173,11 +177,10 @@ if [ -z "$resolution_values" ]; then
     resolution_values="__USE_DEFAULT__"
 fi
 
-model_values="$(split_csv_to_lines "$model_name")"
+model_values="$(split_csv_to_lines "$model_base")"
 quant_values="$(split_csv_to_lines "$quantization_type")"
-thread_values="$(split_csv_to_lines "$inference_thread")"
+thread_values="$(split_csv_to_lines "$inference_threads")"
 
-run_counter=0
 while IFS= read -r model_item; do
     if [ -z "${MODEL_CONFIGS[$model_item]:-}" ]; then
         echo "Unsupported model for MODEL_CONFIGS: $model_item"
@@ -202,20 +205,25 @@ while IFS= read -r model_item; do
                 modelversion="$resolution"
             fi
 
-            model_path="$MODEL_DIR/${model_item}${quant_item}/${modelversion}"
+            model_path="$MODEL_DIR/${model_item}${quant_item}/${modelversion}/model.tflite"
 
             while IFS= read -r thread_item; do
-                run_name="$(sanitize_component "${model_item}_${quant_item}_${resolution}_${thread_item}_${platform}_${scenario}")"
-                OUTPUT_DIR="${custom_output_dir:-${OUTPUT_DIR:-$SCRIPT_DIR/output/$run_name/run_${num_run}}}"
+                run_name="$(sanitize_component "${model_item}_${quant_item}_${resolution}_${thread_item}_${platform}")"
+                OUTPUT_DIR="${custom_output_dir:-${OUTPUT_DIR:-$output_base_dir/$scenario/$run_name/run_${num_run}}}"
                 mkdir -p "$OUTPUT_DIR"
 
-                opts="--model $model_path \
-                    --cache $cache --cache_dir $cache_dir \
-                    --dataset imagenet_tflite --dataset-path $DATA_DIR \
-                    --backend $backend --device $device \
-                    --resolution $resolution --scenario $scenario \
-                    --max-batchsize $max_batchsize --inference_threads $thread_item \
-                    --output /output --preprocessed_dir $preprocessed_dir \
+                opts="--backend $backend \
+                    --model $model_path \
+                    --device $device \
+                    --scenario $scenario \
+                    --cache $cache \
+                    --cache_dir $cache_dir \
+                    --dataset imagenet_tflite \
+                    --dataset-path $DATA_DIR \
+                    --resolution $resolution \
+                    --inference_threads $thread_item \
+                    --max-batchsize $max_batchsize \
+                    --output $OUTPUT_DIR \
                     --model-name $model_item"
 
                 if [ "$use_preprocessed_dataset" = "1" ] || [ "$use_preprocessed_dataset" = "true" ]; then
@@ -230,9 +238,9 @@ while IFS= read -r model_item; do
 
                 echo "Using OUTPUT_DIR=$OUTPUT_DIR"
                 echo "Resolved model_path=$model_path"
-                echo "Running mounted run_helper.sh in container context..."
+                echo "Running mounted run_lite.sh in container context..."
 
-                opts="$opts" bash ./run_helper.sh 2>&1 | tee "$OUTPUT_DIR/output.txt"
+                opts="$opts" bash ./run_lite.sh 2>&1 | tee "$OUTPUT_DIR/output.txt"
             done <<< "$thread_values"
         done <<< "$resolution_values"
     done <<< "$quant_values"
