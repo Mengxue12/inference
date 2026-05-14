@@ -85,10 +85,10 @@ class Imagenet(dataset.Dataset):
 
         if not pre_process:
             log.info(
-                "Loading {} preprocessed images using {} threads".format(
-                    CNT, N))
+                "Loading {} preprocessed images using {} threads from cache directory {}".format(
+                    CNT, N, self.cache_dir))
         else:
-            log.info("Preprocessing {} images using {} threads".format(CNT, N))
+            log.info("Preprocessing {} images using {} threads to cache directory {}".format(CNT, N, self.cache_dir))
 
         with open(image_list, "r") as f:
             lists = []
@@ -125,7 +125,7 @@ class Imagenet(dataset.Dataset):
             log.info("reduced image list, %d images not found", self.not_found)
 
         log.info(
-            "loaded {} images, cache={}, pre_process={}, took={:.1f}sec".format(
+            "loaded {} images, use_cache={}, pre_process={}, took={:.1f}sec".format(
                 len(self.image_list), self.use_cache, pre_process.__name__ if pre_process else 'None (using preprocessed data)', time_taken
             )
         )
