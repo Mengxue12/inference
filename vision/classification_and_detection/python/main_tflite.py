@@ -781,7 +781,9 @@ def main():
     result_dict = {"good": 0, "total": 0, "scenario": str(scenario)}
     runner.start_run(result_dict, args.accuracy)
 
+    test_t0 = time.perf_counter()
     lg.StartTestWithLogSettings(sut, qsl, settings, log_settings, audit_config)
+    test_runtime_s = time.perf_counter() - test_t0
 
     if not last_timeing:
         last_timeing = runner.result_timing
@@ -793,7 +795,7 @@ def main():
         "{}".format(scenario),
         result_dict,
         last_timeing,
-        time.time() - ds.last_loaded,
+        test_runtime_s,
         args.accuracy,
     )
 
