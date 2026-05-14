@@ -12,6 +12,9 @@ Usage:
      --preprocessed_dir <dir> \\
      [--output-dir <dir>] [extra args ...]
 
+  If extra args include --accuracy, the default output path uses a sibling
+  directory \"accuracy\" instead of \"run_<NUM_RUN>\" under each run_name.
+
 Example:
   QUANTIZATION_TYPE="int8,fp16" RESOLUTION="224,192" PLATFORM=cpu NUM_RUN=1 \\
   $0 --backend tflite --model_base "mobilenetv2,resnet50v2" --device cpu \\
@@ -121,6 +124,14 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+want_accuracy_run=0
+for _arg in "${extra_cli_args[@]}"; do
+    if [[ "$_arg" == *--accuracy* ]]; then
+        want_accuracy_run=1
+        break
+    fi
+done
+
 # check if the required arguments are set
 if [ -z "$backend" ] || [ -z "$model_base" ] || [ -z "$device" ] || \
    [ -z "$quantization_type" ]; then
@@ -214,7 +225,26 @@ while IFS= read -r model_item; do
                 echo "****************************************************"
                 echo "Running model_item=$model_item, quant_item=$quant_item, resolution=$resolution, thread_item=$thread_item, platform=$platform"
                 run_name="$(sanitize_component "${model_item}_${quant_item}_${resolution}_${thread_item}_${platform}")"
-                OUTPUT_DIR="${custom_output_dir:-$output_base_dir/$scenario/$run_name/run_${num_run}}"
+                if [ -n "$custom_output_dir" ]; then
+                    if [ "$want_accuracy_run" -eq 1 ]; then
+                        _out_base="$custom_output_dir"
+                        _out_leaf="${_out_base##*/}"
+                        if [[ "$_out_leaf" == run_* ]]; then
+                            OUTPUT_DIR="${_out_base%/*}/accuracy"
+                        else
+                            OUTPUT_DIR="${_out_base}/accuracy"
+                        fi
+                    else
+                        OUTPUT_DIR="$custom_output_dir"
+                    fi
+                else
+                    _run_root="$output_base_dir/$scenario/$run_name"
+                    if [ "$want_accuracy_run" -eq 1 ]; then
+                        OUTPUT_DIR="$_run_root/accuracy"
+                    else
+                        OUTPUT_DIR="$_run_root/run_${num_run}"
+                    fi
+                fi
                 mkdir -p "$OUTPUT_DIR"
 
                 opts="--backend $backend \
