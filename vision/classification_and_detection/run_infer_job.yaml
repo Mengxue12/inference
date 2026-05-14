@@ -8,7 +8,8 @@ spec:
       nodeName: k8s-master01
       containers:
       - name: mlperf-infer
-        image: mengxue12/mlperf-infer-imgclassify-cpu:v5.1-litert-multiarch
+        image: mengxue12/mlperf-infer-imgclassify-cpu:v5.1-litert-multiarch-script
+        imagePullPolicy: Always
         # Redirect stdout and stderr to /output/infer.log
         env:
         - name: MODEL_DIR
@@ -58,8 +59,6 @@ spec:
         - name: model-dir
           mountPath: /data/models/
           readOnly: true
-        - name: mlperf-dir
-          mountPath: /mlperf
         - name: inference-results
           mountPath: /output
         - name: host-proc
@@ -74,9 +73,6 @@ spec:
         hostPath:
           path: /mnt/inference/models/
           type: Directory
-      - name: mlperf-dir
-        hostPath:
-          path: /home/mengxue/Projects/mlcommons/inference/vision/classification_and_detection
       - name: inference-results
         persistentVolumeClaim:
           claimName: inference-results-pvc

@@ -13,6 +13,7 @@ ARG MLCOMMONS_INFERENCE_REF
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
@@ -22,10 +23,12 @@ RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
     Cython==0.29.37
 
 # Sparse checkout: only loadgen (avoids huge language/vision submodules from --recursive).
+# Copy loadgen/mlperf.conf for the runtime image (repo root mlperf.conf may be absent in sparse tree).
 RUN git clone --branch "${MLCOMMONS_INFERENCE_REF}" --depth 1 --filter=blob:none --sparse \
     https://github.com/mlcommons/inference /tmp/inference \
     && cd /tmp/inference \
     && git sparse-checkout set loadgen \
+    && cp /tmp/inference/loadgen/mlperf.conf /tmp/mlperf-root.conf \
     && cd loadgen \
     && CFLAGS="-std=c++14" python setup.py install \
     && rm -rf /tmp/inference
@@ -64,5 +67,11 @@ RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
     opencv-python-headless==4.8.1.78 \
     ai_edge_litert==2.1.3 \
     protobuf==3.20.3
+
+# Benchmark scripts + configs at /mlperf (baked into image; optional dev override: docker -v "$(pwd)":/mlperf).
+COPY --from=builder /tmp/mlperf-root.conf /mlperf/mlperf.conf
+COPY python /mlperf/python
+COPY run_in_container_mounted.sh run_lite.sh user.conf /mlperf/
+RUN chmod +x /mlperf/run_in_container_mounted.sh /mlperf/run_lite.sh
 
 ENTRYPOINT ["/bin/bash"]

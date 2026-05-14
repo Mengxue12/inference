@@ -181,6 +181,9 @@ model_values="$(split_csv_to_lines "$model_base")"
 quant_values="$(split_csv_to_lines "$quantization_type")"
 thread_values="$(split_csv_to_lines "$inference_threads")"
 
+echo "wait for 60 seconds"
+sleep 60
+
 while IFS= read -r model_item; do
     if [ -z "${MODEL_CONFIGS[$model_item]:-}" ]; then
         echo "Unsupported model for MODEL_CONFIGS: $model_item"
@@ -208,23 +211,25 @@ while IFS= read -r model_item; do
             model_path="$MODEL_DIR/${model_item}${quant_item}/${modelversion}/model.tflite"
 
             while IFS= read -r thread_item; do
+                echo "****************************************************"
+                echo "Running model_item=$model_item, quant_item=$quant_item, resolution=$resolution, thread_item=$thread_item, platform=$platform"
                 run_name="$(sanitize_component "${model_item}_${quant_item}_${resolution}_${thread_item}_${platform}")"
-                OUTPUT_DIR="${custom_output_dir:-${OUTPUT_DIR:-$output_base_dir/$scenario/$run_name/run_${num_run}}}"
+                OUTPUT_DIR="${custom_output_dir:-$output_base_dir/$scenario/$run_name/run_${num_run}}"
                 mkdir -p "$OUTPUT_DIR"
 
                 opts="--backend $backend \
-                    --model $model_path \
-                    --device $device \
-                    --scenario $scenario \
-                    --cache $cache \
-                    --cache_dir $cache_dir \
-                    --dataset imagenet_tflite \
-                    --dataset-path $DATA_DIR \
-                    --resolution $resolution \
-                    --inference_threads $thread_item \
-                    --max-batchsize $max_batchsize \
-                    --output $OUTPUT_DIR \
-                    --model-name $model_item"
+--model $model_path \
+--device $device \
+--scenario $scenario \
+--cache $cache \
+--cache_dir $cache_dir \
+--dataset imagenet_tflite \
+--dataset-path $DATA_DIR \
+--resolution $resolution \
+--inference_threads $thread_item \
+--max-batchsize $max_batchsize \
+--output $OUTPUT_DIR \
+--model-name $model_item"
 
                 if [ "$use_preprocessed_dataset" = "1" ] || [ "$use_preprocessed_dataset" = "true" ]; then
                     opts="$opts --use_preprocessed_dataset"
@@ -239,8 +244,11 @@ while IFS= read -r model_item; do
                 echo "Using OUTPUT_DIR=$OUTPUT_DIR"
                 echo "Resolved model_path=$model_path"
                 echo "Running mounted run_lite.sh in container context..."
+                echo "opts: $opts"
 
                 opts="$opts" bash ./run_lite.sh 2>&1 | tee "$OUTPUT_DIR/output.txt"
+                echo "sleep 60"
+                sleep 60
             done <<< "$thread_values"
         done <<< "$resolution_values"
     done <<< "$quant_values"

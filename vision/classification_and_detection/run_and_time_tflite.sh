@@ -38,9 +38,6 @@ if [ $device == "gpu" ]; then
     fi
 fi
 
-# copy the config to cwd so the docker contrainer has access
-cp ../../mlperf.conf .
-
 OUTPUT_DIR=${OUTPUT_DIR:-`pwd`/output/"$backend-$device/$model"}
 _acc_args="$EXTRA_OPS $*"
 if [[ "$_acc_args" == *--accuracy* ]]; then
@@ -58,7 +55,8 @@ opts="--model $model_path --model-name $model \
 --output /output $EXTRA_OPS $@"
 echo "opts: $opts"
 
+# /mlperf comes from the image (Dockerfile.tflite). To override with a host checkout: add -v "$(pwd)":/mlperf
 docker run $gpus -e opts="$opts" \
-    -v $DATA_DIR:$DATA_DIR -v $MODEL_DIR:$MODEL_DIR -v `pwd`:/mlperf \
+    -v $DATA_DIR:$DATA_DIR -v $MODEL_DIR:$MODEL_DIR \
     -v $OUTPUT_DIR:/output -v /proc:/host_proc \
     -t $image:v5.1-tflite /mlperf/run_lite.sh 2>&1 | tee $OUTPUT_DIR/output.txt
