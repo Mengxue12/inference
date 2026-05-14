@@ -25,6 +25,47 @@ except BaseException:
 import numpy as np
 import backend
 
+def _quantize_float_to_integer(input_data, scale, zero_point, dst_dtype):
+    """Map real values to quantized tensor values using TFLite per-tensor (scale, zp)."""
+    if scale is None or scale == 0:
+        raise ValueError(
+            "Input expects quantized dtype {} but quantization scale is missing or zero".format(
+                dst_dtype
+            )
+        )
+    zp = 0.0 if zero_point is None else float(zero_point)
+    scaled = np.rint(input_data.astype(np.float64) / float(scale) + zp)
+    dt = np.dtype(dst_dtype)
+    if dt == np.uint8:
+        return np.clip(scaled, 0, 255).astype(np.uint8)
+    if dt == np.int8:
+        return np.clip(scaled, -128, 127).astype(np.int8)
+    if dt == np.int16:
+        return np.clip(scaled, -32768, 32767).astype(np.int16)
+    if dt == np.uint16:
+        return np.clip(scaled, 0, 65535).astype(np.uint16)
+    raise ValueError("Unsupported quantized input dtype: {}".format(dst_dtype))
+
+
+def _prepare_input_tensor(input_data, input_detail):
+    """Cast / quantize feed tensors to match interpreter input dtype."""
+    want_dtype = input_detail["dtype"]
+    want = np.dtype(want_dtype)
+    if np.issubdtype(want, np.floating):
+        if np.issubdtype(input_data.dtype, np.floating):
+            return np.asarray(input_data, dtype=np.float32)
+        return input_data
+    if not np.issubdtype(want, np.integer): # in case the shape signature is not an integer, pass through
+        return input_data
+    # Integer input (e.g. uint8 / int8): pass through if dtype already matches.
+    if np.issubdtype(input_data.dtype, want):
+        return np.asarray(input_data, dtype=want)
+    if not np.issubdtype(input_data.dtype, np.floating):
+        return np.asarray(input_data, dtype=want)
+    # Integer input: quantize float to integer
+    scale, zero_point = input_detail.get("quantization") or (None, None)
+    return _quantize_float_to_integer(input_data, scale, zero_point, want)
+
 
 class BackendTflite(backend.Backend):
     def __init__(self):
@@ -152,12 +193,8 @@ class BackendTflite(backend.Backend):
                     input_data = np.concatenate(
                         [input_data, np.repeat(input_data[-1:], pad_shape[0], axis=0)], axis=0
                     )
-                if self.use_tpu and self.sess.get_input_details()[v]["dtype"] == np.uint8:
-                    input_scale, input_zero_point = self.sess.get_input_details()[v][
-                        "quantization"
-                    ]
-                    input_data = input_data / input_scale + input_zero_point
-                    input_data = input_data.astype(np.uint8)
+                input_detail = self.sess.get_input_details()[v]
+                input_data = _prepare_input_tensor(input_data, input_detail)
                 self.sess.set_tensor(v, input_data)
             self.sess.invoke()
             # get results

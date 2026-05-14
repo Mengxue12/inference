@@ -607,7 +607,7 @@ def main():
     ds = wanted_dataset(
         data_path=args.dataset_path,
         image_list=args.dataset_list,
-        name=str(args.resolution)+'_int' if 'int' in str(args.model) else str(args.resolution),
+        name=str(kwargs["image_size"][0])+'_int' if 'int' in str(args.model) else str(kwargs["image_size"][0]),
         image_format=image_format,
         pre_process=pre_proc,
         use_cache=args.cache,
