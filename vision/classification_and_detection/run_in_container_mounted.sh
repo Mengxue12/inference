@@ -250,8 +250,12 @@ model_values="$(split_csv_to_lines "$model_base")"
 quant_values="$(split_csv_to_lines "$quantization_type")"
 thread_values="$(split_csv_to_lines "$inference_threads")"
 
-echo "wait for 60 seconds"
-sleep 60
+WAIT_BEFORE_SECONDS=${WAIT_BEFORE_SECONDS:-10}
+WAIT_AFTER_SECONDS=${WAIT_AFTER_SECONDS:-10}
+if [[ "$WAIT_BEFORE_SECONDS" =~ ^[0-9]+$ ]] && (( WAIT_BEFORE_SECONDS > 0 )); then
+    echo "Waiting for $WAIT_BEFORE_SECONDS seconds before running experiments"
+    sleep "$WAIT_BEFORE_SECONDS"
+fi
 
 while IFS= read -r model_item; do
     if [ -z "${MODEL_CONFIGS[$model_item]:-}" ]; then

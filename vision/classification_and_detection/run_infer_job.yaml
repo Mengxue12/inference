@@ -24,6 +24,8 @@ spec:
           value: "SingleStream"
         - name: NUM_RUN
           value: "1"
+        - name: WAIT_BEFORE_SECONDS
+          value: "10"
           # adaptation parameters
         - name: MODEL_BASE
           value: "mobilenetv2" # "mobilenetv2,resnetv1"
