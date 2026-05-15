@@ -163,6 +163,64 @@ split_csv_to_lines() {
     echo "$value" | tr ',' '\n' | sed -E 's/^[[:space:]]+//;s/[[:space:]]+$//' | sed '/^$/d'
 }
 
+# Write experiment manifest at the run root (OUTPUT_DIR); MLPerf logs live in OUTPUT_DIR/logs.
+write_run_manifest() {
+    local out_dir="$1" started_at="$2" ended_at="$3" exit_code="$4"
+    MANIFEST_OUT_DIR="$(cd "$out_dir" && pwd)" \
+    MANIFEST_STARTED_AT="$started_at" \
+    MANIFEST_ENDED_AT="$ended_at" \
+    MANIFEST_EXIT_CODE="$exit_code" \
+    MANIFEST_MODEL_NAME="$model_item" \
+    MANIFEST_QUANT_ITEM="$quant_item" \
+    MANIFEST_RESOLUTION="$resolution" \
+    MANIFEST_INFERENCE_THREADS="$thread_item" \
+    MANIFEST_MAX_BATCHSIZE="${max_batchsize:-}" \
+    MANIFEST_PLATFORM="$platform" \
+    MANIFEST_SCENARIO="$scenario" \
+    MANIFEST_BACKEND="$backend" \
+    MANIFEST_DEVICE="$device" \
+    python3 - <<'PY'
+import json
+import os
+
+def _int_field(name):
+    raw = os.environ.get(name, "") or ""
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
+
+out = os.environ["MANIFEST_OUT_DIR"]
+exit_code = os.environ.get("MANIFEST_EXIT_CODE", "1")
+status = "completed" if exit_code == "0" else "failed"
+
+data = {
+    "model_name": os.environ["MANIFEST_MODEL_NAME"],
+    "quant_item": os.environ["MANIFEST_QUANT_ITEM"],
+    "resolution": _int_field("MANIFEST_RESOLUTION"),
+    "inference_threads": _int_field("MANIFEST_INFERENCE_THREADS"),
+    "max_batchsize": _int_field("MANIFEST_MAX_BATCHSIZE"),
+    "platform": os.environ["MANIFEST_PLATFORM"],
+    "scenario": os.environ["MANIFEST_SCENARIO"],
+    "backend": os.environ["MANIFEST_BACKEND"],
+    "device": os.environ["MANIFEST_DEVICE"],
+    "mlperf_logs_dir": "logs",
+    "started_at": os.environ["MANIFEST_STARTED_AT"],
+    "ended_at": os.environ["MANIFEST_ENDED_AT"],
+    "status": status,
+    "run_exit_code": _int_field("MANIFEST_EXIT_CODE"),
+}
+
+path = os.path.join(out, "manifest.json")
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+}
+
 declare -A MODEL_CONFIGS=(
     ["mobilenetv2"]="100224:224"
     ["efficientnetb0"]="224:224"
@@ -244,6 +302,8 @@ while IFS= read -r model_item; do
                     fi
                 fi
                 mkdir -p "$OUTPUT_DIR"
+                LOGS_DIR="$OUTPUT_DIR/logs"
+                mkdir -p "$LOGS_DIR"
 
                 opts="--backend $backend \
 --model $model_path \
@@ -256,7 +316,7 @@ while IFS= read -r model_item; do
 --resolution $resolution \
 --inference_threads $thread_item \
 --max-batchsize $max_batchsize \
---output $OUTPUT_DIR \
+--output $LOGS_DIR \
 --model-name $model_item"
 
                 if [ "$use_preprocessed_dataset" = "1" ] || [ "$use_preprocessed_dataset" = "true" ]; then
@@ -269,12 +329,22 @@ while IFS= read -r model_item; do
                     done
                 fi
 
-                echo "Using OUTPUT_DIR=$OUTPUT_DIR"
+                echo "Using OUTPUT_DIR=$OUTPUT_DIR (MLPerf logs under $LOGS_DIR)"
                 echo "Resolved model_path=$model_path"
                 echo "Running mounted run_lite.sh in container context..."
                 echo "opts: $opts"
 
+                run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                set +e
                 opts="$opts" bash ./run_lite.sh 2>&1 | tee "$OUTPUT_DIR/output.txt"
+                run_exit="${PIPESTATUS[0]}"
+                set -euo pipefail
+                run_ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                write_run_manifest "$OUTPUT_DIR" "$run_started_at" "$run_ended_at" "$run_exit"
+                if [ "$run_exit" -ne 0 ]; then
+                    echo "Run failed with exit code $run_exit" >&2
+                    exit "$run_exit"
+                fi
                 echo "sleep 60"
                 sleep 60
             done <<< "$thread_values"
