@@ -179,6 +179,7 @@ write_run_manifest() {
     MANIFEST_SCENARIO="$scenario" \
     MANIFEST_BACKEND="$backend" \
     MANIFEST_DEVICE="$device" \
+    MANIFEST_ACCURACY="$want_accuracy_run" \
     python3 - <<'PY'
 import json
 import os
@@ -207,6 +208,7 @@ data = {
     "scenario": os.environ["MANIFEST_SCENARIO"],
     "backend": os.environ["MANIFEST_BACKEND"],
     "device": os.environ["MANIFEST_DEVICE"],
+    "accuracy": os.environ.get("MANIFEST_ACCURACY", "0") == "1",
     "mlperf_logs_dir": "logs",
     "started_at": os.environ["MANIFEST_STARTED_AT"],
     "ended_at": os.environ["MANIFEST_ENDED_AT"],
