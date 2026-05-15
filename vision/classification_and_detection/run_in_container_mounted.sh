@@ -342,7 +342,7 @@ while IFS= read -r model_item; do
 
                 run_started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                 set +e
-                opts="$opts" bash ./run_lite.sh 2>&1 | tee "$OUTPUT_DIR/output.txt"
+                opts="$opts" bash ./run_lite.sh 2>&1 | tee "$LOGS_DIR/output.txt"
                 run_exit="${PIPESTATUS[0]}"
                 set -euo pipefail
                 run_ended_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
