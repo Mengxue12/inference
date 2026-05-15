@@ -62,7 +62,7 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         --resolution)
-            resolution_env="${2:-}"
+            resolution="${2:-}"
             shift 2
             ;;
         --scenario)
@@ -179,13 +179,11 @@ if [ -z "$cache_dir" ]; then
 fi
 
 
+# Resolution sweep list from env RESOLUTION (comma-separated); empty => model default.
 if [ -z "$resolution" ]; then
-    resolution_values=""
-else
-    resolution_values="$(split_csv_to_lines "$resolution_env")"
-fi
-if [ -z "$resolution_values" ]; then
     resolution_values="__USE_DEFAULT__"
+else
+    resolution_values="$(split_csv_to_lines "$resolution")"
 fi
 
 model_values="$(split_csv_to_lines "$model_base")"
