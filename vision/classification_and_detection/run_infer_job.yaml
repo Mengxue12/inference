@@ -35,10 +35,14 @@ spec:
           value: "224"
         - name: INFERENCE_THREADS
           value: "1"
-        - name: PLATFORM
+        - name: NODE_NAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: NODE_ARCH
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeSelector['kubernetes.io/arch']
         - name: BATCHSIZE
           value: "1" # will be used in other scenarios
         

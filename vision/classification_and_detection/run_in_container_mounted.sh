@@ -16,7 +16,7 @@ Usage:
   directory \"accuracy\" instead of \"run_<NUM_RUN>\" under each run_name.
 
 Example:
-  QUANTIZATION_TYPE="int8,fp16" RESOLUTION="224,192" PLATFORM=cpu NUM_RUN=1 \\
+  QUANTIZATION_TYPE="int8,fp16" RESOLUTION="224,192" NODE_NAME=raspberrypi NUM_RUN=1 \\
   $0 --backend tflite --model_base "mobilenetv2,resnet50v2" --device cpu \\
      --scenario SingleStream \\
      --inference_threads "2,4" \\
@@ -25,7 +25,8 @@ Example:
 Environment variables:
   QUANTIZATION_TYPE   quantization type CSV string (required unless --quantization_type is given)
   RESOLUTION          resolution CSV string (optional)
-  PLATFORM            output dir platform part (default: device)
+  NODE_NAME           Kubernetes node name for output dirs and manifest (default: device)
+  NODE_ARCH           node architecture for manifest (optional; from downward API in K8s)
   NUM_RUN             output dir run number (default: 1)
 EOF
 }
@@ -43,7 +44,8 @@ quantization_type="${QUANTIZATION_TYPE:-}"
 resolution="${RESOLUTION:-}"
 inference_threads="${INFERENCE_THREADS:-}"
 max_batchsize="${BATCHSIZE:-}"
-platform="${PLATFORM:-}"
+node_name="${NODE_NAME:-}"
+node_arch="${NODE_ARCH:-}"
 num_run="${NUM_RUN:-1}"
 extra_cli_args=()
 
@@ -89,8 +91,12 @@ while [ $# -gt 0 ]; do
             quantization_type="${2:-}"
             shift 2
             ;;
-        --platform)
-            platform="${2:-}"
+        --node-name)
+            node_name="${2:-}"
+            shift 2
+            ;;
+        --node-arch)
+            node_arch="${2:-}"
             shift 2
             ;;
         --num_run)
@@ -175,7 +181,8 @@ write_run_manifest() {
     MANIFEST_RESOLUTION="$resolution" \
     MANIFEST_INFERENCE_THREADS="$thread_item" \
     MANIFEST_MAX_BATCHSIZE="${max_batchsize:-}" \
-    MANIFEST_PLATFORM="$platform" \
+    MANIFEST_NODE_NAME="$node_name" \
+    MANIFEST_NODE_ARCH="$node_arch" \
     MANIFEST_SCENARIO="$scenario" \
     MANIFEST_BACKEND="$backend" \
     MANIFEST_DEVICE="$device" \
@@ -204,7 +211,8 @@ data = {
     "resolution": _int_field("MANIFEST_RESOLUTION"),
     "inference_threads": _int_field("MANIFEST_INFERENCE_THREADS"),
     "max_batchsize": _int_field("MANIFEST_MAX_BATCHSIZE"),
-    "platform": os.environ["MANIFEST_PLATFORM"],
+    "node_name": os.environ.get("MANIFEST_NODE_NAME", ""),
+    "node_arch": os.environ.get("MANIFEST_NODE_ARCH", ""),
     "scenario": os.environ["MANIFEST_SCENARIO"],
     "backend": os.environ["MANIFEST_BACKEND"],
     "device": os.environ["MANIFEST_DEVICE"],
@@ -230,8 +238,8 @@ declare -A MODEL_CONFIGS=(
     ["resnet50v2"]="224:224"
 )
 
-if [ -z "$platform" ]; then
-    platform="$device"
+if [ -z "$node_name" ]; then
+    node_name="$device"
 fi
 
 if [ -z "$cache_dir" ]; then
@@ -285,8 +293,8 @@ while IFS= read -r model_item; do
 
             while IFS= read -r thread_item; do
                 echo "****************************************************"
-                echo "Running model_item=$model_item, quant_item=$quant_item, resolution=$resolution, thread_item=$thread_item, platform=$platform"
-                run_name="$(sanitize_component "${model_item}_${quant_item}_${resolution}_${thread_item}_${platform}")"
+                echo "Running model_item=$model_item, quant_item=$quant_item, resolution=$resolution, thread_item=$thread_item, node_name=$node_name, node_arch=$node_arch"
+                run_name="$(sanitize_component "${model_item}_${quant_item}_${resolution}_${thread_item}_${node_name}")"
                 if [ -n "$custom_output_dir" ]; then
                     if [ "$want_accuracy_run" -eq 1 ]; then
                         _out_base="$custom_output_dir"
