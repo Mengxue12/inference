@@ -28,21 +28,23 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
-from extract_power_windows import (
+from extract_common import (
     DEFAULT_PROM_STEP,
     POWER_SUBDIR,
     TIME_JSON_NAME,
-    _expected_detail_log,
-    _print_no_detail_log,
-    _print_no_power_pairs,
-    _resolve_tz,
-    _roots_label,
-    collect_by_run_dir,
+    expected_detail_log,
     iter_run_dirs,
+    print_no_detail_log,
+    resolve_tz,
+    roots_label,
     time_json_path,
+)
+from extract_power_windows import (
+    _print_no_power_pairs,
+    collect_by_run_dir,
     write_time_json,
 )
-from fetch_prometheus_metrics import sanitize_output_stem
+from fetch_common import sanitize_output_stem
 
 DEFAULT_METRIC = "kepler_node_cpu_joules_total"
 FETCH_SCRIPT = Path(__file__).resolve().parent / "fetch_prometheus_metrics.py"
@@ -62,7 +64,7 @@ def run_extract_phase(
     total_windows = sum(len(rc.windows) for rc in by_run.values())
 
     if not by_run:
-        _print_no_detail_log(
+        print_no_detail_log(
             roots, recursive, sys.stderr, suffix="No time.json written."
         )
         return written, 2
@@ -72,7 +74,7 @@ def run_extract_phase(
         windows = rc.windows
         out_path = time_json_path(run_dir)
         if not windows:
-            in_log = ", ".join(rc.detail_logs) or str(_expected_detail_log(run_dir))
+            in_log = ", ".join(rc.detail_logs) or str(expected_detail_log(run_dir))
             print(
                 f"warning: no power_begin / power_end pairs found under "
                 f"{run_dir} in {in_log}; skipping {POWER_SUBDIR}/{TIME_JSON_NAME}",
@@ -105,7 +107,7 @@ def run_extract_phase(
                 else "existing files skipped or timestamp parse failed"
             )
             print(
-                f"warning: no time.json written under {_roots_label(roots)} "
+                f"warning: no time.json written under {roots_label(roots)} "
                 f"({skip_reason})",
                 file=sys.stderr,
             )
@@ -284,7 +286,7 @@ def main() -> int:
             return 1
 
     try:
-        tz = _resolve_tz(args.tz)
+        tz = resolve_tz(args.tz)
     except Exception as exc:
         print(f"error: invalid --tz {args.tz!r}: {exc}", file=sys.stderr)
         return 1
@@ -306,7 +308,7 @@ def main() -> int:
 
     output_dirs = iter_run_dirs(roots, args.recursive)
     if not output_dirs:
-        _print_no_detail_log(
+        print_no_detail_log(
             roots,
             args.recursive,
             sys.stderr,

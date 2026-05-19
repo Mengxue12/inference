@@ -30,16 +30,38 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, TextIO
+from typing import Any, TextIO
 from zoneinfo import ZoneInfo
 
-MLLOG_PREFIX = ":::MLLOG"
-POWER_DATETIME_FMT = "%m-%d-%Y %H:%M:%S.%f"
-DETAIL_LOG_NAME = "mlperf_log_detail.txt"
-MANIFEST_NAME = "manifest.json"
-TIME_JSON_NAME = "time.json"
-POWER_SUBDIR = "power"
-DEFAULT_PROM_STEP = "1s"
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPT_DIR))
+
+from extract_common import (
+    DEFAULT_PROM_STEP,
+    DETAIL_LOG_NAME,
+    MANIFEST_NAME,
+    MLLOG_PREFIX,
+    POWER_DATETIME_FMT,
+    POWER_SUBDIR,
+    TIME_JSON_NAME,
+    expected_detail_log,
+    iter_detail_log_paths,
+    iter_run_dirs,
+    print_no_detail_log,
+    read_node_arch_from_run_dir,
+    read_node_name_from_run_dir,
+    resolve_tz,
+    roots_label,
+    run_dir_from_log_path,
+    time_json_path,
+)
+
+# Re-export for scripts that still import from extract_power_windows.
+_expected_detail_log = expected_detail_log
+_print_no_detail_log = print_no_detail_log
+_resolve_tz = resolve_tz
+_roots_label = roots_label
 
 
 @dataclass(frozen=True)
@@ -82,16 +104,7 @@ def _window_duration_s(begin: PowerEvent, end: PowerEvent) -> float | None:
     return (end_dt - begin_dt).total_seconds()
 
 
-def _resolve_tz(tz_name: str) -> timezone | ZoneInfo:
-    if tz_name.upper() == "UTC":
-        return timezone.utc
-    if tz_name == "local":
-        return datetime.now().astimezone().tzinfo or timezone.utc
-    return ZoneInfo(tz_name)
-
-
 def _to_unix_seconds(dt: datetime, tz: timezone | ZoneInfo) -> int | None:
-    """Unix seconds for start times (truncate sub-second fraction)."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=tz)
     else:
@@ -100,7 +113,6 @@ def _to_unix_seconds(dt: datetime, tz: timezone | ZoneInfo) -> int | None:
 
 
 def _to_unix_seconds_ceil(dt: datetime, tz: timezone | ZoneInfo) -> int | None:
-    """Unix seconds for end times (round up sub-second fraction)."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=tz)
     else:
@@ -114,74 +126,6 @@ def _to_rfc3339(dt: datetime, tz: timezone | ZoneInfo) -> str | None:
     else:
         dt = dt.astimezone(tz)
     return dt.isoformat(timespec="milliseconds")
-
-
-def _manifest_str_field(data: dict[str, Any], key: str) -> str | None:
-    value = data.get(key)
-    if value is None:
-        return None
-    text = str(value).strip()
-    return text or None
-
-
-def read_node_name_from_run_dir(run_dir: Path) -> str | None:
-    manifest_path = run_dir / MANIFEST_NAME
-    if not manifest_path.is_file():
-        return None
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"warning: {manifest_path}: {exc}", file=sys.stderr)
-        return None
-    return _manifest_str_field(data, "node_name")
-
-
-def read_node_arch_from_run_dir(run_dir: Path) -> str | None:
-    manifest_path = run_dir / MANIFEST_NAME
-    if not manifest_path.is_file():
-        return None
-    try:
-        data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"warning: {manifest_path}: {exc}", file=sys.stderr)
-        return None
-    return _manifest_str_field(data, "node_arch")
-
-
-def _run_dir_from_log_path(log_path: Path) -> Path:
-    log_path = log_path.resolve()
-    if log_path.name == DETAIL_LOG_NAME and log_path.parent.name == "logs":
-        return log_path.parent.parent
-    return log_path.parent
-
-
-def _expected_detail_log(root: Path) -> Path:
-    return root / "logs" / DETAIL_LOG_NAME
-
-
-def _is_logs_detail_log(path: Path) -> bool:
-    return path.name == DETAIL_LOG_NAME and path.parent.name == "logs"
-
-
-def _iter_detail_log_paths(path: Path, recursive: bool) -> Iterator[Path]:
-    if path.is_file():
-        if _is_logs_detail_log(path):
-            yield path
-        return
-
-    direct = _expected_detail_log(path)
-    if direct.is_file():
-        yield direct
-
-    if not recursive:
-        return
-
-    for candidate in sorted(path.rglob(DETAIL_LOG_NAME)):
-        if candidate == direct:
-            continue
-        if not _is_logs_detail_log(candidate):
-            continue
-        yield candidate
 
 
 def _parse_mllog_messages(log_path: Path) -> list[dict[str, Any]]:
@@ -256,51 +200,10 @@ def extract_windows_from_log(log_path: Path) -> list[PowerWindow]:
     return windows
 
 
-def _roots_label(roots: list[Path]) -> str:
-    resolved = [str(r.resolve()) for r in roots]
-    return resolved[0] if len(resolved) == 1 else ", ".join(resolved)
-
-
-def _missing_detail_log_hint(root: Path, recursive: bool) -> str:
-    root = root.resolve()
-    if root.is_file():
-        if root.name == DETAIL_LOG_NAME:
-            return str(root)
-        return f"not {DETAIL_LOG_NAME}: {root}"
-
-    expected = _expected_detail_log(root)
-    hints: list[str] = [f"looked for {expected}"]
-    logs_dir = root / "logs"
-    if not logs_dir.exists():
-        hints.append("no logs/ directory")
-    elif not logs_dir.is_dir():
-        hints.append("logs exists but is not a directory")
-    elif not expected.is_file():
-        hints.append("logs/ present but mlperf_log_detail.txt missing")
-    if recursive:
-        hints.append(f"also searched recursively under {root}")
-    elif not root.name.startswith("run_"):
-        hints.append(
-            "hint: pass a run_* directory, or use --recursive for experiment roots"
-        )
-    return "; ".join(hints)
-
-
-def _print_no_detail_log(
-    roots: list[Path], recursive: bool, out: TextIO, *, suffix: str = ""
-) -> None:
-    under = _roots_label(roots)
-    hints = " | ".join(_missing_detail_log_hint(r, recursive) for r in roots)
-    msg = f"No mlperf_log_detail.txt found under {under} ({hints})."
-    if suffix:
-        msg = f"{msg} {suffix}"
-    print(msg, file=out)
-
-
 def _print_no_power_pairs(
     roots: list[Path], by_run: dict[Path, RunCollect], out: TextIO, *, suffix: str = ""
 ) -> None:
-    under = _roots_label(roots)
+    under = roots_label(roots)
     locations: list[str] = []
     for run_dir in sorted(by_run):
         rc = by_run[run_dir]
@@ -321,12 +224,12 @@ def collect_by_run_dir(
 
     for root in paths:
         root = root.resolve()
-        for log_path in _iter_detail_log_paths(root, recursive):
+        for log_path in iter_detail_log_paths(root, recursive):
             log_path = log_path.resolve()
             if log_path in seen_logs:
                 continue
             seen_logs.add(log_path)
-            run_dir = _run_dir_from_log_path(log_path)
+            run_dir = run_dir_from_log_path(log_path)
             rc = by_run.setdefault(run_dir, RunCollect(windows=[], detail_logs=[]))
             log_str = str(log_path)
             if log_str not in rc.detail_logs:
@@ -334,26 +237,6 @@ def collect_by_run_dir(
             rc.windows.extend(extract_windows_from_log(log_path))
 
     return by_run
-
-
-def iter_run_dirs(paths: list[Path], recursive: bool) -> list[Path]:
-    """Each OUTPUT_DIR that has (or is parent of) mlperf_log_detail.txt under paths.
-
-    Uses the same discovery rules as collect_by_run_dir / _iter_detail_log_paths.
-    """
-    seen: set[Path] = set()
-    run_dirs: list[Path] = []
-
-    for root in paths:
-        root = root.resolve()
-        for log_path in _iter_detail_log_paths(root, recursive):
-            run_dir = _run_dir_from_log_path(log_path).resolve()
-            if run_dir in seen:
-                continue
-            seen.add(run_dir)
-            run_dirs.append(run_dir)
-
-    return sorted(run_dirs)
 
 
 def _window_entry(w: PowerWindow, tz: timezone | ZoneInfo) -> dict[str, Any]:
@@ -424,10 +307,6 @@ def build_time_json(
     return payload
 
 
-def time_json_path(run_dir: Path) -> Path:
-    return run_dir / POWER_SUBDIR / TIME_JSON_NAME
-
-
 def write_time_json(
     run_dir: Path,
     windows: list[PowerWindow],
@@ -451,7 +330,7 @@ def _format_text(
     out: TextIO,
 ) -> None:
     if not by_run:
-        _print_no_detail_log(roots, recursive, out)
+        print_no_detail_log(roots, recursive, out)
         return
     if not any(rc.windows for rc in by_run.values()):
         _print_no_power_pairs(roots, by_run, out)
@@ -535,7 +414,7 @@ def main() -> int:
             return 1
 
     try:
-        tz = _resolve_tz(args.tz)
+        tz = resolve_tz(args.tz)
     except Exception as exc:
         print(f"error: invalid --tz {args.tz!r}: {exc}", file=sys.stderr)
         return 1
@@ -546,7 +425,7 @@ def main() -> int:
     if args.write_time_json:
         written: list[Path] = []
         if not by_run:
-            _print_no_detail_log(
+            print_no_detail_log(
                 roots,
                 args.recursive,
                 sys.stderr,
@@ -557,9 +436,7 @@ def main() -> int:
             windows = rc.windows
             out_path = time_json_path(run_dir)
             if not windows:
-                in_log = ", ".join(rc.detail_logs) or str(
-                    _expected_detail_log(run_dir)
-                )
+                in_log = ", ".join(rc.detail_logs) or str(expected_detail_log(run_dir))
                 print(
                     f"warning: no power_begin / power_end pairs found under "
                     f"{run_dir} in {in_log}; skipping {POWER_SUBDIR}/{TIME_JSON_NAME}",
@@ -583,7 +460,7 @@ def main() -> int:
             print(f"Wrote {out_path}", file=sys.stderr)
         if not written:
             if not by_run:
-                pass  # message already printed above
+                pass
             elif total_windows == 0:
                 _print_no_power_pairs(
                     roots,
@@ -598,7 +475,7 @@ def main() -> int:
                     else "existing files skipped or timestamp parse failed"
                 )
                 print(
-                    f"warning: no time.json written under {_roots_label(roots)} "
+                    f"warning: no time.json written under {roots_label(roots)} "
                     f"({skip_reason})",
                     file=sys.stderr,
                 )
