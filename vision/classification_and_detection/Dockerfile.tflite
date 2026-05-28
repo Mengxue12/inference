@@ -71,7 +71,7 @@ RUN pip install --no-cache-dir --upgrade pip==23.3.2 \
 # Benchmark scripts + configs at /mlperf (baked into image; optional dev override: docker -v "$(pwd)":/mlperf).
 COPY --from=builder /tmp/mlperf-root.conf /mlperf/mlperf.conf
 COPY python /mlperf/python
-COPY run_in_container_mounted.sh run_lite.sh user.conf /mlperf/
-RUN chmod +x /mlperf/run_in_container_mounted.sh /mlperf/run_lite.sh
+COPY run_lite_infer_sweep.sh run_lite.sh user.conf /mlperf/
+RUN chmod +x /mlperf/run_lite_infer_sweep.sh /mlperf/run_lite.sh
 
 ENTRYPOINT ["/bin/bash"]

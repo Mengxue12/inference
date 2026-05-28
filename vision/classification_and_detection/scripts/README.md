@@ -16,7 +16,7 @@ All paths below are relative to `vision/classification_and_detection/` unless no
 
 ## Run layout
 
-Scripts expect output directories produced by containerized runs (e.g. `run_in_container_mounted.sh`). Each **OUTPUT_DIR** (`run_*`, `accuracy/`, etc.) typically contains:
+Scripts expect output directories produced by containerized runs (e.g. `run_lite_infer_sweep.sh`). Each **OUTPUT_DIR** (`run_*`, `accuracy/`, etc.) typically contains:
 
 ```
 run_1/

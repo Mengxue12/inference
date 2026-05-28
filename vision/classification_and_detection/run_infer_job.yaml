@@ -49,7 +49,7 @@ spec:
         command: ["/bin/sh", "-c"]
         args:
         - |
-          /mlperf/run_in_container_mounted.sh \
+          /mlperf/run_lite_infer_sweep.sh \
             --backend tflite \
             --model_base $MODEL_BASE \
             --device cpu \

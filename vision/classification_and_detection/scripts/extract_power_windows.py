@@ -2,7 +2,7 @@
 """
 Extract power_begin / power_end windows from MLPerf detail logs.
 
-Logs from run_in_container_mounted.sh live under OUTPUT_DIR/logs/mlperf_log_detail.txt
+Logs from run_lite_infer_sweep.sh live under OUTPUT_DIR/logs/mlperf_log_detail.txt
 (each run_* or accuracy/ directory is an OUTPUT_DIR). This script reads that file, not
 run_* metadata directly: for a directory argument it first checks <path>/logs/mlperf_log_detail.txt;
 with --recursive it also finds mlperf_log_detail.txt anywhere under <path> (e.g. run_*/logs/).
