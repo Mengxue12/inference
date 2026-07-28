@@ -309,3 +309,65 @@ def pre_process_openimages_retinanet(img, dims=None, need_transpose=False):
     if need_transpose:
         img = img.transpose([2, 0, 1])
     return img
+
+
+def pre_process_imagenet(img, dims=None, need_transpose=False):
+    if len(img.shape) < 3 or img.shape[2] != 3:
+        # some images might be grayscale
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    output_height, output_width, _ = dims or (224, 224, 3)
+    img = resize_with_aspectratio(
+        img, output_height, output_width, inter_pol=cv2.INTER_LINEAR
+    )
+    img = center_crop(img, output_height, output_width)
+    img = np.asarray(img, dtype="float32")
+
+    img /= 255.0  # normalize to [0, 1]
+
+    # transpose if needed
+    if need_transpose:
+        img = img.transpose([2, 0, 1])
+    return img
+
+
+
+def pre_process_imagenet_efficientnet(img, dims=None, need_transpose=False):
+    if len(img.shape) < 3 or img.shape[2] != 3:
+        # some images might be grayscale
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    output_height, output_width, _ = dims or (224, 224, 3)
+    img = resize_with_aspectratio(
+        img, output_height, output_width, inter_pol=cv2.INTER_LINEAR
+    )
+    img = center_crop(img, output_height, output_width)
+    img = np.asarray(img, dtype="float32")
+
+    # transpose if needed
+    if need_transpose:
+        img = img.transpose([2, 0, 1])
+    return img
+
+
+def pre_process_imagenet_int8(img, dims=None, need_transpose=False):
+    if len(img.shape) < 3 or img.shape[2] != 3:
+        # some images might be grayscale
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    output_height, output_width, _ = dims or [224, 224, 3]
+    img = resize_with_aspectratio(
+        img, output_height, output_width, inter_pol=cv2.INTER_LINEAR
+    )
+    img = center_crop(img, output_height, output_width)
+    # Convert to int16 first to avoid overflow, then subtract 128, then convert to int8
+    img = np.asarray(img, dtype=np.int16)
+    img -= 128
+    img = np.asarray(img, dtype=np.int8)
+
+    # transpose if needed
+    if need_transpose:
+        img = img.transpose([2, 0, 1])
+    return img

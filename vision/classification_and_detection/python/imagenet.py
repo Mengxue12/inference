@@ -33,6 +33,7 @@ class Imagenet(dataset.Dataset):
         cache_dir=None,
         preprocessed_dir=None,
         threads=os.cpu_count(),
+        debug=False,
     ):
         super(Imagenet, self).__init__()
         if image_size is None:
@@ -49,6 +50,7 @@ class Imagenet(dataset.Dataset):
             pre_process  # if None we assume data_path is having preprocessed dataset
         )
         self.use_cache = use_cache
+        self.debug = debug
 
         if preprocessed_dir:
             self.cache_dir = preprocessed_dir
@@ -69,6 +71,7 @@ class Imagenet(dataset.Dataset):
             for count, line in enumerate(fp):
                 pass
         count = count + 1
+        log.info(f"Found {count} entries in image list")
         if not self.count:
             CNT = count
         else:
@@ -85,10 +88,10 @@ class Imagenet(dataset.Dataset):
 
         if not pre_process:
             log.info(
-                "Loading {} preprocessed images using {} threads".format(
-                    CNT, N))
+                "Loading {} preprocessed images using {} threads from cache directory {}".format(
+                    CNT, N, self.cache_dir))
         else:
-            log.info("Preprocessing {} images using {} threads".format(CNT, N))
+            log.info("Preprocessing {} images using {} threads to cache directory {}".format(CNT, N, self.cache_dir))
 
         with open(image_list, "r") as f:
             lists = []
@@ -125,8 +128,8 @@ class Imagenet(dataset.Dataset):
             log.info("reduced image list, %d images not found", self.not_found)
 
         log.info(
-            "loaded {} images, cache={}, already_preprocessed={}, took={:.1f}sec".format(
-                len(self.image_list), use_cache, pre_process is None, time_taken
+            "loaded {} images, use_cache={}, pre_process={}, took={:.1f}sec".format(
+                len(self.image_list), self.use_cache, pre_process.__name__ if pre_process else 'None (using preprocessed data)', time_taken
             )
         )
         self.label_list = np.array(self.label_list)
@@ -136,30 +139,58 @@ class Imagenet(dataset.Dataset):
             image_name, label = re.split(r"\s+", s.strip())
             src = os.path.join(data_path, image_name)
             if not self.pre_process:
-                if not os.path.exists(os.path.join(
-                        data_path, image_name) + ".npy"):
+                preprocessed_path = os.path.join(data_path, image_name) + ".npy"
+                if not os.path.exists(preprocessed_path):
                     # if the image does not exists ignore it
                     self.not_found += 1
+                    if self.debug:
+                        log.error(
+                            "preprocessed image not found: %s", preprocessed_path
+                        )
                     continue
             else:
                 if not os.path.exists(src):
                     # if the image does not exists ignore it
                     self.not_found += 1
+                    if self.debug:
+                        log.error("source image not found: %s", src)
                     continue
                 os.makedirs(
                     os.path.dirname(os.path.join(self.cache_dir, image_name)),
                     exist_ok=True,
                 )
                 dst = os.path.join(self.cache_dir, image_name)
-                if not os.path.exists(dst + ".npy"):
-                    # cache a preprocessed version of the image
+                rebuild = (self.use_cache == 0) or (not os.path.exists(dst + ".npy"))
+                if rebuild:
                     img_org = cv2.imread(src)
-                    processed = self.pre_process(
-                        img_org,
-                        need_transpose=self.need_transpose,
-                        dims=self.image_size,
-                    )
-                    np.save(dst, processed)
+                    if img_org is None:
+                        self.not_found += 1
+                        if self.debug:
+                            log.error("failed to decode source image: %s", src)
+                        continue
+                    try:
+                        processed = self.pre_process(
+                            img_org,
+                            need_transpose=self.need_transpose,
+                            dims=self.image_size,
+                        )
+                        if self.debug:
+                            log.info(
+                                "%s: dtype=%s, shape=%s, range=[%s, %s]",
+                                image_name,
+                                processed.dtype,
+                                processed.shape,
+                                processed.min(),
+                                processed.max(),
+                            )
+                        np.save(dst, processed)
+                    except Exception:  # pylint: disable=broad-except
+                        self.not_found += 1
+                        if self.debug:
+                            log.exception(
+                                "failed to preprocess image: %s", src
+                            )
+                        continue
             image_list.append(image_name)
             label_list.append(int(label))
 
